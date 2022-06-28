@@ -188,7 +188,17 @@ func extractItviecTask(ctx context.Context, db *sql.DB) error {
 
 				})
 
-				doc.Find("#truyen .col-truyen-main .col-info-desc .info-holder .desc .info > div:nth-child(2) > a").Each(func(index int, info *goquery.Selection) {
+				doc.Find(".col-truyen-main .col-info-desc .info-holder .desc .info > div:nth-child(2) > a").Each(func(index int, info *goquery.Selection) {
+					//category := info.Text()
+					// _, err := db.Exec(fmt.Sprintf(`INSERT INTO list_book (title) VALUES (%q)`, text))
+					// if err != nil {
+					// 	log.Printf("extractItviecTask - Error: %v", err)
+					// }
+					//fmt.Println(category)
+
+				})
+
+				doc.Find(".col-truyen-main .col-info-desc .info-holder .desc .info > div:nth-child(3) > a").Each(func(index int, info *goquery.Selection) {
 					category := info.Text()
 					// _, err := db.Exec(fmt.Sprintf(`INSERT INTO list_book (title) VALUES (%q)`, text))
 					// if err != nil {
