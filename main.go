@@ -1,23 +1,23 @@
 package main
 
 import (
+	"Crawler/models"
 	"context"
 	"fmt"
 	"log"
 	"strings"
 	"time"
 
-	"database/sql"
-
 	_ "github.com/go-sql-driver/mysql"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/chromedp/cdproto/dom"
 	"github.com/chromedp/chromedp"
+	"github.com/jmoiron/sqlx"
 )
 
-func dbConnection() (*sql.DB, error) {
-	db, err := sql.Open("mysql", "root:@tcp(127.0.0.1:3306)/crawl")
+func dbConnection() (*sqlx.DB, error) {
+	db, err := sqlx.Connect("mysql", "root:@tcp(127.0.0.1:3306)/crawl")
 	if err != nil {
 		log.Printf("Error %s when opening DB\n", err)
 		return nil, err
@@ -30,20 +30,48 @@ func dbConnection() (*sql.DB, error) {
 	return db, nil
 }
 
-func newChromedp(db *sql.DB) (context.Context, context.CancelFunc) {
+func newChromedp(db *sqlx.DB) (context.Context, context.CancelFunc) {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:]) // chromedp.Flag("headless", false),
 
 	allocCtx, _ := chromedp.NewExecAllocator(context.Background(), opts...)
 	ctx, cancel := chromedp.NewContext(allocCtx, chromedp.WithLogf(log.Printf))
 
-	extractItviecTask(ctx, db)
+	saveBook(ctx, db)
 
 	return ctx, cancel
 }
 
-func extractItviecTask(ctx context.Context, db *sql.DB) error {
-	var dataTitle []string
+var Catagories []models.CatagoryModel
+
+func getAllCatagories(db *sqlx.DB) {
+	query := "select * from categories"
+	rows, err := db.Queryx(query)
+	if err != nil {
+		panic(err)
+	}
+
+	Catagories = make([]models.CatagoryModel, 0)
+	for rows.Next() {
+		do := models.CatagoryModel{}
+		err := rows.StructScan(&do)
+		if err != nil {
+			panic(err)
+		}
+
+		Catagories = append(Catagories, do)
+	}
+}
+
+func saveBook(ctx context.Context, db *sqlx.DB) error {
+	var dataCategories []string
 	var titleBook []string
+	var des string
+	var title string
+	var author string
+	var source string
+	var status string
+	var categories []string
+	// var load []string
 	// var listData []string{"title", }
 	task := chromedp.Tasks{
 		chromedp.Navigate("https://truyenfull.vn"),
@@ -61,18 +89,20 @@ func extractItviecTask(ctx context.Context, db *sql.DB) error {
 				return err
 			}
 
-			doc.Find("ul.navbar-nav > li.dropdown > ul.dropdown-menu > li > a").Each(func(index int, titlefo *goquery.Selection) {
+			doc.Find(".list-truyen > .row > .col-xs-6 > a").Each(func(index int, titlefo *goquery.Selection) {
 				titleT, title := titlefo.Attr("href")
-				text := titlefo.Text()
-				_, err := db.Exec(fmt.Sprintf(`INSERT INTO list_book (title) VALUES (%q)`, text))
+				// text := titlefo.Text()
+
+				// _, err := db.Exec(fmt.Sprintf(`INSERT INTO categories (name, link) VALUES (%q, %q)`, text, titleT))
+
 				if err != nil {
-					log.Printf("extractItviecTask - Error: %v", err)
+					log.Printf("saveBook - Error: %v", err)
 				}
 				if title {
-					dataTitle = append(dataTitle, titleT)
+					dataCategories = append(dataCategories, titleT)
+					// db.Exec(fmt.Sprintf(`INSERT INTO list_categories (link) VALUES (%q)`, titleT))
 					// fmt.Printf(titleT)
 					// fmt.Println(titleT)
-
 				}
 
 			})
@@ -82,7 +112,7 @@ func extractItviecTask(ctx context.Context, db *sql.DB) error {
 			// 	// fmt.Println(text)
 			// 	// _, err := db.Exec(fmt.Sprintf(`INSERT INTO list_book (title) VALUES (%q)`, text))
 			// 	// if err != nil {
-			// 	// 	log.Printf("extractItviecTask - Error: %v", err)
+			// 	// 	log.Printf("saveBook - Error: %v", err)
 			// 	// }
 			// })
 
@@ -95,8 +125,8 @@ func extractItviecTask(ctx context.Context, db *sql.DB) error {
 
 	}
 
-	fmt.Println("dataTitle", len(dataTitle))
-	for _, num := range dataTitle {
+	fmt.Println("dataCategories", len(dataCategories))
+	for _, num := range dataCategories {
 		// fmt.Println("num", num)
 		titleP := chromedp.Tasks{
 			chromedp.Navigate(num),
@@ -118,7 +148,7 @@ func extractItviecTask(ctx context.Context, db *sql.DB) error {
 					// text := info.Text()
 					// _, err := db.Exec(fmt.Sprintf(`INSERT INTO list_book (title) VALUES (%q)`, text))
 					// if err != nil {
-					// 	log.Printf("extractItviecTask - Error: %v", err)
+					// 	log.Printf("saveBook - Error: %v", err)
 					// }
 					// fmt.Println(text)
 					titleT, title := info.Attr("href")
@@ -140,6 +170,8 @@ func extractItviecTask(ctx context.Context, db *sql.DB) error {
 		}
 	}
 
+	fmt.Println(len(titleBook))
+
 	for _, num := range titleBook {
 		// fmt.Println("num", num)
 		titleP := chromedp.Tasks{
@@ -159,55 +191,103 @@ func extractItviecTask(ctx context.Context, db *sql.DB) error {
 				}
 
 				doc.Find("#truyen .col-truyen-main .col-info-desc h3.title").Each(func(index int, info *goquery.Selection) {
-					// text := info.Text()
+					text := info.Text()
 					// _, err := db.Exec(fmt.Sprintf(`INSERT INTO list_book (title) VALUES (%q)`, text))
+
 					// if err != nil {
-					// 	log.Printf("extractItviecTask - Error: %v", err)
+					// 	log.Printf("saveBook - Error: %v", err)
 					// }
+					title = text
 					// fmt.Println(text)
 
 				})
 
-				doc.Find("#truyen .col-truyen-main .col-info-desc .desc .desc-text-full").Each(func(index int, info *goquery.Selection) {
-					// desc := info.Text()
-					// _, err := db.Exec(fmt.Sprintf(`INSERT INTO list_book (title) VALUES (%q)`, text))
+				doc.Find("#truyen .col-truyen-main .col-info-desc .desc .desc-text").Each(func(index int, info *goquery.Selection) {
+					desc := info.Text()
+					// _, err := db.Exec(fmt.Sprintf(`INSERT INTO list_book (des) VALUES (%q)`, desc))
 					// if err != nil {
-					// 	log.Printf("extractItviecTask - Error: %v", err)
+					// 	log.Printf("saveBook - Error: %v", err)
 					// }
+					des = desc
 					// fmt.Println(desc)
 
 				})
 
-				doc.Find("#truyen .col-truyen-main .col-info-desc .info-holder .desc .info > div:nth-child(1) a").Each(func(index int, info *goquery.Selection) {
-					// desc := info.Text()
-					// _, err := db.Exec(fmt.Sprintf(`INSERT INTO list_book (title) VALUES (%q)`, text))
+				doc.Find("#truyen .col-truyen-main .col-info-desc .info-holder .info div:nth-child(1) a").Each(func(index int, info *goquery.Selection) {
+					authors := info.Text()
+					// _, err := db.Exec(fmt.Sprintf(`INSERT INTO list_book (author) VALUES (%q)`, authors))
 					// if err != nil {
-					// 	log.Printf("extractItviecTask - Error: %v", err)
+					// 	log.Printf("saveBook - Error: %v", err)
 					// }
+					author = authors
 					// fmt.Println(desc)
 
 				})
 
-				doc.Find(".col-truyen-main .col-info-desc .info-holder .desc .info > div:nth-child(2) > a").Each(func(index int, info *goquery.Selection) {
-					//category := info.Text()
-					// _, err := db.Exec(fmt.Sprintf(`INSERT INTO list_book (title) VALUES (%q)`, text))
+				doc.Find("#truyen .col-truyen-main .col-info-desc .info-holder .info div:nth-child(2) a").Each(func(index int, info *goquery.Selection) {
+					categorie := info.Text()
+					// _, err := db.Exec(fmt.Sprintf(`INSERT INTO list_book (author) VALUES (%q)`, authors))
 					// if err != nil {
-					// 	log.Printf("extractItviecTask - Error: %v", err)
+					// 	log.Printf("saveBook - Error: %v", err)
 					// }
-					//fmt.Println(category)
+					// categories = authors
+					categories = append(categories, categorie)
+					// fmt.Println(desc)
 
 				})
 
-				doc.Find(".col-truyen-main .col-info-desc .info-holder .desc .info > div:nth-child(3) > a").Each(func(index int, info *goquery.Selection) {
-					category := info.Text()
-					// _, err := db.Exec(fmt.Sprintf(`INSERT INTO list_book (title) VALUES (%q)`, text))
+				doc.Find("#truyen .col-truyen-main .col-info-desc .info-holder .info div:nth-child(3) span").Each(func(index int, info *goquery.Selection) {
+					sources := info.Text()
+					// _, err := db.Exec(fmt.Sprintf(`INSERT INTO list_book (source) VALUES (%q)`, sources))
 					// if err != nil {
-					// 	log.Printf("extractItviecTask - Error: %v", err)
+					// 	log.Printf("saveBook - Error: %v", err)
 					// }
-					fmt.Println(category)
+					source = sources
+					// fmt.Println(sources)
 
 				})
 
+				doc.Find("#truyen .col-truyen-main .col-info-desc .info-holder .info div:nth-child(4) span").Each(func(index int, info *goquery.Selection) {
+					statuss := info.Text()
+
+					status = statuss
+					// fmt.Println(category)
+
+				})
+
+				fmt.Println("da vao")
+				rows, err := db.Exec(fmt.Sprintf(`INSERT INTO books (title, des, author, source, status) VALUES (%q, %q , %q, %q , %q)`, title, des, author, source, status))
+				if err != nil {
+					log.Printf("saveBook - Error: %v", err)
+				}
+				bookID, err := rows.LastInsertId()
+
+				if err != nil {
+					panic(err)
+				}
+
+				// Tim catagory cho book
+				listCategoriesID := make([]int, 0)
+				for _, v := range Catagories {
+
+					if strings.Contains(strings.Join(categories, ","), v.Name) {
+						listCategoriesID = append(listCategoriesID, v.ID)
+
+					}
+				}
+
+				// string.Contains func trong golang được sử dụng để kiểm tra các chữ cái đã cho có trong chuỗi hay không. nếu có kí tự có trong chuỗi đã cho
+				// thì nó trả về true ngược lại trả về false / func Contains(str, substr string) bool / fmt.Println(strings.Contains("GeeksforGeeks", "for")) / for tồn tại trong chuỗi
+
+				// string.Join ()  func nối tất cả các phần từ có trong chuỗi thành một chuỗi duy nhất, hàm này có sẵn trong string package
+				// func Join(s []string, sep string) string / nối chúng với nhau và cách nhau bằng dấu ","
+				// Save vao bang book_categories
+				for _, id := range listCategoriesID {
+					query := fmt.Sprintf("INSERT INTO book_categories(book_id, category_id) VALUES (%d, %d)", bookID, id)
+					db.Exec(query)
+				}
+
+				categories = make([]string, 0)
 				return nil
 			}),
 		}
@@ -217,23 +297,20 @@ func extractItviecTask(ctx context.Context, db *sql.DB) error {
 		}
 	}
 
-	fmt.Println(len(titleBook))
-
 	return nil
 }
 
 func main() {
-
-	// close chrome
-	// _, cancel := newChromedp()
-	// defer cancel()
 	db, err := dbConnection()
-	_, _ = newChromedp(db) //Khởi tạo biến conection
-	if err != nil {        //Catch error trong quá trình thực thi
+
+	if err != nil { //Catch error trong quá trình thực thi
 		log.Printf("Error %s when getting db connection", err)
 		return
 	}
 	defer db.Close()
+
+	getAllCatagories(db)
+	_, _ = newChromedp(db) //Khởi tạo biến conection
 
 	log.Printf("Successfully connected to database")
 
