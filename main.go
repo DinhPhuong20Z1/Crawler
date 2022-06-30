@@ -376,7 +376,7 @@ func saveBook(ctx context.Context, db *sqlx.DB) error {
 				// })
 				// for i := 2; i < 7 && i != 3; {
 
-				doc.Find("#list-chapter .pagination li:nth-child(4) a").Each(func(index int, info *goquery.Selection) {
+				doc.Find("#list-chapter .pagination li:nth-child(2) a").Each(func(index int, info *goquery.Selection) {
 					// words = append(words, sel.Text())
 					link, _ := info.Attr("href")
 					// fmt.Println("sel", sel.Text())
@@ -465,6 +465,12 @@ func saveBook(ctx context.Context, db *sqlx.DB) error {
 				if err != nil {
 					return err
 				}
+
+				doc.Find("#truyen .col-truyen-main .col-info-desc h3.title").Each(func(index int, info *goquery.Selection) {
+					text := info.Text()
+					titleData = text
+
+				})
 
 				// smt := fmt.Fprintf("#list-chapter .pagination li:nth-child(%d) a", i)
 				doc.Find(".list-chapter li a").Each(func(index int, info *goquery.Selection) {
