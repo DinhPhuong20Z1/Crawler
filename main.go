@@ -43,6 +43,8 @@ func newChromedp(db *sqlx.DB) (context.Context, context.CancelFunc) {
 
 var Catagories []models.CatagoryModel
 
+var Chapter []models.ChapterModel
+
 func getAllCatagories(db *sqlx.DB) {
 	query := "select * from categories"
 	rows, err := db.Queryx(query)
@@ -62,6 +64,25 @@ func getAllCatagories(db *sqlx.DB) {
 	}
 }
 
+func getAllChapter(db *sqlx.DB) {
+	query := "select * from chapters"
+	rows, err := db.Queryx(query)
+	if err != nil {
+		panic(err)
+	}
+
+	Chapter = make([]models.ChapterModel, 0)
+	for rows.Next() {
+		do := models.ChapterModel{}
+		err := rows.StructScan(&do)
+		if err != nil {
+			panic(err)
+		}
+
+		Chapter = append(Chapter, do)
+	}
+}
+
 func saveBook(ctx context.Context, db *sqlx.DB) error {
 	var dataCategories []string
 	var titleBook []string
@@ -71,8 +92,11 @@ func saveBook(ctx context.Context, db *sqlx.DB) error {
 	var source string
 	var status string
 	var categories []string
+	var titleData string
+	// var example string
 	// var load []string
-	// var listData []string{"title", }
+	var listData []string
+	// var words []string
 	task := chromedp.Tasks{
 		chromedp.Navigate("https://truyenfull.vn"),
 		chromedp.ActionFunc(func(ctx context.Context) error {
@@ -254,12 +278,33 @@ func saveBook(ctx context.Context, db *sqlx.DB) error {
 					// fmt.Println(category)
 
 				})
+				doc.Find(".list-chapter li a").Each(func(index int, info *goquery.Selection) {
+					chapter := info.Text()
+					titleT, titleS := info.Attr("href")
+					if titleS {
+						_, err := db.Exec(fmt.Sprintf(`INSERT INTO chapters (name, name_book, link_chapters) VALUES (%q, %q ,%q )`, chapter, title, titleT))
+						if err != nil {
+							log.Printf("saveBook - Error: %v", err)
+						}
+					}
 
-				fmt.Println("da vao")
+					if err != nil {
+						log.Printf("saveBook - Error: %v", err)
+					}
+					source = chapter
+					// fmt.Println(sources)
+
+				})
+				// if author != nil {
+				// 	_, err := db.Exec(fmt.Sprintf(`INSERT INTO chapters (name, name_book, id_name_book, link_chapters) VALUES (%q, %q , %d, %q )`, title, des, author, source, status))
+				// }
+
 				rows, err := db.Exec(fmt.Sprintf(`INSERT INTO books (title, des, author, source, status) VALUES (%q, %q , %q, %q , %q)`, title, des, author, source, status))
+
 				if err != nil {
 					log.Printf("saveBook - Error: %v", err)
 				}
+
 				bookID, err := rows.LastInsertId()
 
 				if err != nil {
@@ -297,6 +342,160 @@ func saveBook(ctx context.Context, db *sqlx.DB) error {
 		}
 	}
 
+	for _, num := range titleBook {
+		// fmt.Println("num", num)
+		chapterData := chromedp.Tasks{
+			chromedp.Navigate(num),
+			chromedp.ActionFunc(func(ctx context.Context) error {
+				node, err := dom.GetDocument().Do(ctx)
+				if err != nil {
+					return err
+				}
+				res, err := dom.GetOuterHTML().WithNodeID(node.NodeID).Do(ctx)
+				if err != nil {
+					return err
+				}
+				doc, err := goquery.NewDocumentFromReader(strings.NewReader(res))
+				if err != nil {
+					return err
+				}
+
+				doc.Find("#truyen .col-truyen-main .col-info-desc h3.title").Each(func(index int, info *goquery.Selection) {
+					text := info.Text()
+					titleData = text
+
+				})
+
+				// f := func(i int, sel *goquery.Selection) bool {
+				// 	return strings.HasPrefix(sel.Text(), "")
+				// }
+
+				// doc.Filter(".list-chapter li").Each(func(index int, info *goquery.Selection) {
+				// 	fmt.Println("1", index)
+				// 	fmt.Println("2", info)
+				// })
+				// for i := 2; i < 7 && i != 3; {
+
+				doc.Find("#list-chapter .pagination li:nth-child(4) a").Each(func(index int, info *goquery.Selection) {
+					// words = append(words, sel.Text())
+					link, _ := info.Attr("href")
+					// fmt.Println("sel", sel.Text())
+					listData = append(listData, link)
+					// i = i + 1
+					// for i := 2; i++ {
+
+					// }
+				})
+
+				// doc.Find("#list-chapter .pagination li:nth-child(4) a").Each(func(index int, info *goquery.Selection) {
+				// 	// words = append(words, sel.Text())
+				// 	link, _ := info.Attr("href")
+				// 	// fmt.Println("sel", sel.Text())
+				// 	listData = append(listData, link)
+				// 	// i = i + 1
+				// 	// for i := 2; i++ {
+
+				// 	// }
+				// })
+
+				// doc.Find("#list-chapter .pagination li:nth-child(5) a").Each(func(index int, info *goquery.Selection) {
+				// 	// words = append(words, sel.Text())
+				// 	link, _ := info.Attr("href")
+				// 	// fmt.Println("sel", sel.Text())
+				// 	listData = append(listData, link)
+				// 	// i = i + 1
+				// 	// for i := 2; i++ {
+
+				// 	// }
+				// })
+
+				// }
+
+				doc.Find(".list-chapter li a").Each(func(index int, info *goquery.Selection) {
+					chapter := info.Text()
+					titleT, titleS := info.Attr("href")
+					if titleS {
+						_, err := db.Exec(fmt.Sprintf(`INSERT INTO chapters (name, name_book, link_chapters) VALUES (%q, %q ,%q )`, chapter, titleData, titleT))
+						if err != nil {
+							log.Printf("saveBook - Error: %v", err)
+						}
+					}
+
+					if err != nil {
+						log.Printf("saveBook - Error: %v", err)
+					}
+					// source = chapter
+
+				})
+
+				return nil
+			}),
+		}
+
+		// fmt.Println("words", words)
+		if err := chromedp.Run(ctx, chapterData); err != nil {
+			fmt.Println(err)
+
+		}
+
+	}
+
+	// listChapterName := make([]string, 0)
+	// for _, v := range Chapter {
+
+	// 	if !!strings.Contains(strings.Join(listData, ","), v.Name) {
+	// 		listChapterName = append(listChapterName, v.Link)
+
+	// 	}
+	// }
+
+	for _, num := range listData {
+		chapterList := chromedp.Tasks{
+			chromedp.Navigate(num),
+			chromedp.ActionFunc(func(ctx context.Context) error {
+				node, err := dom.GetDocument().Do(ctx)
+				if err != nil {
+					return err
+				}
+				res, err := dom.GetOuterHTML().WithNodeID(node.NodeID).Do(ctx)
+				if err != nil {
+					return err
+				}
+				doc, err := goquery.NewDocumentFromReader(strings.NewReader(res))
+				if err != nil {
+					return err
+				}
+
+				// smt := fmt.Fprintf("#list-chapter .pagination li:nth-child(%d) a", i)
+				doc.Find(".list-chapter li a").Each(func(index int, info *goquery.Selection) {
+					// words = append(words, sel.Text())
+					chapter := info.Text()
+					titleT, titleS := info.Attr("href")
+					// fmt.Println("sel", sel.Text())
+					if titleS {
+
+						_, err := db.Exec(fmt.Sprintf(`INSERT INTO chapters (name, name_book, link_chapters) VALUES (%q, %q ,%q )`, chapter, titleData, titleT))
+						if err != nil {
+							log.Printf("saveBook - Error: %v", err)
+						}
+					}
+
+					// for i := 2; i++ {
+
+					// }
+				})
+
+				return nil
+			}),
+		}
+
+		fmt.Println("listData", listData)
+		if err := chromedp.Run(ctx, chapterList); err != nil {
+			fmt.Println(err)
+
+		}
+	}
+
 	return nil
 }
 
@@ -310,6 +509,7 @@ func main() {
 	defer db.Close()
 
 	getAllCatagories(db)
+	getAllChapter(db)
 	_, _ = newChromedp(db) //Khởi tạo biến conection
 
 	log.Printf("Successfully connected to database")
